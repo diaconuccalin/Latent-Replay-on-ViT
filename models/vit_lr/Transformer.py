@@ -1,3 +1,4 @@
+import torch
 import torch.nn as nn
 
 from models.vit_lr.TransformerBlock import TransformerBlock
@@ -22,6 +23,7 @@ class Transformer(nn.Module):
             -1 <= latent_replay_block < num_blocks
         ), "Invalid latent replay block selection."
         self.latent_replay_block = latent_replay_block
+        self.block_id = [0] * num_blocks
 
         self.blocks = nn.ModuleList(
             [
@@ -36,6 +38,7 @@ class Transformer(nn.Module):
                 for _ in range(num_blocks)
             ]
         )
+        self.current_object = -1
 
     def forward(self, x, get_activation=False):
         is_pattern, x = x
@@ -51,6 +54,13 @@ class Transformer(nn.Module):
             if get_activation and i == self.latent_replay_block:
                 activation = x.clone().detach()
             x = block(x)
+
+            torch.save(
+                x,
+                f"activations/{i}/transformer_block_{self.current_object}_{self.block_id[i]}.pth",
+            )
+            self.block_id[i] += 1
+            print(self.current_object)
 
         if get_activation:
             return x, activation
