@@ -4,7 +4,7 @@ CORe50 data obtained from [here](https://vlomonaco.github.io/core50/index.html#d
 
 ~~~
 .
-├── datasets
+├── data
 │   ├── core50
 │   │   ├── data
 │   │   │   ├── core50_128x128

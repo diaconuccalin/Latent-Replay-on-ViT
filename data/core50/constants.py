@@ -2,7 +2,7 @@ NEW_TO_OLD_NAMES = {"ni": "ni", "multi-task-nc": "nc", "nic": "nicv2_391"}
 
 N_BATCH = {"ni": 8, "nc": 9, "nicv2_391": 391}
 
-CORE50_ROOT_PATH = "datasets/core50/data"
+CORE50_ROOT_PATH = "data/core50/data"
 
 # Batch splits
 NI_TRAINING_BATCHES = list(range(8))

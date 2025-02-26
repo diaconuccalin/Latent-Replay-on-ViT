@@ -2,8 +2,8 @@ import torch
 from sklearn.metrics import confusion_matrix
 from tqdm import tqdm
 
-from datasets.core50.CORe50DataLoader import CORe50DataLoader
-from datasets.core50.constants import (
+from data.core50.CORe50DataLoader import CORe50DataLoader
+from data.core50.constants import (
     CORE50_CLASS_NAMES,
     CORE50_ROOT_PATH,
     CORE50_CATEGORY_NAMES,

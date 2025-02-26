@@ -6,8 +6,8 @@ import numpy as np
 import torch
 from PIL import Image
 
-from datasets.core50 import constants
-from datasets.core50.constants import NEW_TO_OLD_NAMES
+from data.core50 import constants
+from data.core50.constants import NEW_TO_OLD_NAMES
 from models.vit_lr.ResizeProcedure import ResizeProcedure
 from models.vit_lr.vit_lr_utils import bordering_resize
 
@@ -38,6 +38,7 @@ class CORe50DataLoader(object):
         # (one category contains all the 5 different objects for each of the 10 types).
         category_based_split: bool = False,
         debug_mode: bool = False,
+        cluster_centroids: torch.Tensor = None,
     ):
         # Check that a resize procedure is provided when needed
         if original_image_size != input_image_size:
@@ -120,6 +121,9 @@ class CORe50DataLoader(object):
         self.do_randomization()
         self.compute_h()
 
+        # Load cluster centroids if provided
+        self.cluster_centroids = cluster_centroids
+
     def __iter__(self):
         return self
 
@@ -134,6 +138,10 @@ class CORe50DataLoader(object):
             x, y = self.stored_activations[
                 self.stored_activations_indexes.index(self.idx_order[self.idx])
             ]
+
+            # If using quantization of activations, get the corresponding centroid
+            if self.cluster_centroids is not None:
+                x = self.cluster_centroids[x]
 
             # Mark it as activation
             x = (False, x)
@@ -394,3 +402,53 @@ class CORe50DataLoader(object):
         # Treat case of h greater than size of current batch
         if self.h > len(self.current_batch):
             self.h = len(self.current_batch)
+
+    def store_activations(self, activations):
+        if self.cluster_centroids is not None:
+            quantized_activations = list()
+
+            for activation, y in activations:
+                # Count number of centroids
+                centroids_n = self.cluster_centroids.shape[0]
+
+                # Store initial activation shape
+                activation_shape = list(activation.shape)[1:]
+
+                # Prepare activation for centroid comparison
+                activation = torch.cat(
+                    [activation[0] for _ in range(centroids_n)]
+                ).reshape(
+                    [
+                        centroids_n,
+                    ]
+                    + activation_shape
+                )
+
+                # Prepare centroids for comparison
+                centroids = (
+                    torch.cat(
+                        [
+                            torch.full(activation_shape, el)
+                            for el in self.cluster_centroids
+                        ]
+                    )
+                    .view(
+                        centroids_n,
+                        *activation_shape,
+                    )
+                    .to(activation.device)
+                )
+
+                # Compute closest centroid
+                closest_centroid = torch.argmin(
+                    torch.abs(activation - centroids),
+                    axis=0,
+                )
+
+                # Store closest centroid
+                quantized_activations.append((closest_centroid.unsqueeze(0), y))
+
+            # Store quantized activations
+            self.stored_activations = quantized_activations
+        else:
+            self.stored_activations = activations

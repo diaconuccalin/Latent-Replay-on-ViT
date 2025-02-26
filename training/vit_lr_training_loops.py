@@ -4,8 +4,8 @@ import random
 import torch
 from tqdm import tqdm
 
-from datasets.core50.CORe50DataLoader import CORe50DataLoader
-from datasets.core50.constants import (
+from data.core50.CORe50DataLoader import CORe50DataLoader
+from data.core50.constants import (
     CORE50_ROOT_PATH,
     CORE50_CATEGORY_NAMES,
     CORE50_CLASS_NAMES,
@@ -203,7 +203,7 @@ def vit_lr_epoch(
             potential_new_activations_indexes is not None
         ):
             data_loader.stored_activations_indexes = actual_new_activations_indexes
-            data_loader.stored_activations = new_activations
+            data_loader.store_activations(new_activations)
             data_loader.h = len(actual_new_activations_indexes)
 
         # Populate rehearsal memory
@@ -281,6 +281,7 @@ def vit_training_pipeline(
     data_loader_debug_mode=False,
     should_validate=False,
     validation_batch=None,
+    cluster_centroids=None,
 ):
     # Check that batch-specific weights are provided when dealing with AR1*
     if current_scenario in PIPELINES_WITH_LEARNING_RATE_MODULATION:
@@ -317,6 +318,7 @@ def vit_training_pipeline(
         debug_mode=data_loader_debug_mode,
         mini_batch_size=mini_batch_size,
         keep_rehearsal_proportion=current_scenario in LR_PIPELINES,
+        cluster_centroids=cluster_centroids,
     )
 
     # Prepare model save path

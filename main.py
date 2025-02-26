@@ -3,7 +3,7 @@ import os
 
 import torch
 
-from datasets.core50.constants import (
+from data.core50.constants import (
     NI_TRAINING_BATCHES,
     NC_TRAINING_BATCHES,
     NIC_CUMULATIVE_TRAINING_BATCHES,
@@ -127,6 +127,12 @@ def create_arg_parser():
         default=[-1],
     )
 
+    parser.add_argument(
+        "--cluster_centroids_path",
+        help="Path to the pre-computed activation quantization centroids.",
+        required=False,
+    )
+
     return parser
 
 
@@ -204,6 +210,7 @@ def vit_lr_train(
     rehearsal_memory_size=0,
     should_validate=False,
     latent_replay_layers=None,
+    cluster_centroids=None,
 ):
     # Choose batches
     populate_rm_batches = None
@@ -263,6 +270,11 @@ def vit_lr_train(
     else:
         latent_replay_layers = [-1]
 
+    if current_scenario not in LR_PIPELINES:
+        assert (
+            cluster_centroids is None
+        ), "Cluster centroids must be None for non-latent replay scenarios."
+
     for current_run in runs:
         print(
             "--------------- Starting run",
@@ -317,6 +329,7 @@ def vit_lr_train(
                     should_validate=should_validate,
                     validation_batch=validation_batch,
                     latent_replay_layer=lr_layer,
+                    cluster_centroids=cluster_centroids,
                     **CONSTANT_TRAINING_PARAMETERS,
                 )
 
@@ -359,6 +372,17 @@ def main():
     # Get cuda device
     device = get_cuda_device()
 
+    # Load cluster centroids
+    if args.cluster_centroids_path is not None:
+        cluster_centroids = torch.load(args.cluster_centroids_path)
+        cluster_centroids = cluster_centroids.reshape(
+            [
+                cluster_centroids.numel(),
+            ]
+        ).to(device)
+    else:
+        cluster_centroids = None
+
     # Run chosen pipeline
     if pipeline == "core50_evaluation":
         vit_lr_core50_evaluation(
@@ -378,6 +402,7 @@ def main():
             n_blocks=n_blocks,
             runs=runs,
             should_validate=do_validation,
+            cluster_centroids=None,
         )
     else:
         current_scenario = None
@@ -413,6 +438,7 @@ def main():
                 n_blocks=n_blocks,
                 should_validate=do_validation,
                 latent_replay_layers=latent_replay_layers,
+                cluster_centroids=cluster_centroids,
             )
 
     return None
