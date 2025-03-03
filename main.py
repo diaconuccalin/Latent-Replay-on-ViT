@@ -1,6 +1,7 @@
 import argparse
 import os
 
+import numpy as np
 import torch
 
 from evaluation.evaluation_utils import plot_confusion_matrix, plot_losses
@@ -374,7 +375,7 @@ def main():
 
     # Load cluster centroids
     if args.cluster_centroids_path is not None:
-        cluster_centroids = torch.load(args.cluster_centroids_path)
+        cluster_centroids = torch.tensor(np.load(args.cluster_centroids_path))
         cluster_centroids = cluster_centroids.reshape(
             [
                 cluster_centroids.numel(),
