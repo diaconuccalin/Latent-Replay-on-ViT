@@ -2,16 +2,16 @@ import os
 import random
 
 import torch
-from data.core50.CORe50DataLoader import CORe50DataLoader
-from data.core50.constants import (
-    CORE50_ROOT_PATH,
-    CORE50_CATEGORY_NAMES,
-    CORE50_CLASS_NAMES,
-)
 from tqdm import tqdm
 
 from evaluation.evaluation_utils import plot_confusion_matrix
 from evaluation.vit_lr_evaluation_loop import vit_lr_evaluation_pipeline
+from the_datasets.core50.CORe50DataLoader import CORe50DataLoader
+from the_datasets.core50.constants import (
+    CORE50_ROOT_PATH,
+    CORE50_CATEGORY_NAMES,
+    CORE50_CLASS_NAMES,
+)
 from the_models.vit_lr.ResizeProcedure import ResizeProcedure
 from the_models.vit_lr.ViTLR_model import ViTLR
 from the_models.vit_lr.vit_lr_utils import vit_lr_image_preprocessing

@@ -1,13 +1,13 @@
 import torch
-from data.core50.CORe50DataLoader import CORe50DataLoader
-from data.core50.constants import (
+from sklearn.metrics import confusion_matrix
+from tqdm import tqdm
+
+from the_datasets.core50.CORe50DataLoader import CORe50DataLoader
+from the_datasets.core50.constants import (
     CORE50_CLASS_NAMES,
     CORE50_ROOT_PATH,
     CORE50_CATEGORY_NAMES,
 )
-from sklearn.metrics import confusion_matrix
-from tqdm import tqdm
-
 from the_models.vit_lr.ResizeProcedure import ResizeProcedure
 from the_models.vit_lr.ViTLR_model import ViTLR
 from the_models.vit_lr.vit_lr_utils import vit_lr_image_preprocessing

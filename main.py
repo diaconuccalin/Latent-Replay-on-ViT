@@ -3,7 +3,9 @@ import os
 
 import torch
 
-from data.core50.constants import (
+from evaluation.evaluation_utils import plot_confusion_matrix, plot_losses
+from evaluation.vit_lr_evaluation_loop import vit_lr_evaluation_pipeline
+from the_datasets.core50.constants import (
     NI_TRAINING_BATCHES,
     NC_TRAINING_BATCHES,
     NIC_CUMULATIVE_TRAINING_BATCHES,
@@ -22,8 +24,6 @@ from data.core50.constants import (
     NIC_POPULATE_RM_EPOCHS,
     NIC_SINGLE_CUMULATIVE_TRAINING_BATCHES,
 )
-from evaluation.evaluation_utils import plot_confusion_matrix, plot_losses
-from evaluation.vit_lr_evaluation_loop import vit_lr_evaluation_pipeline
 from training.PipelineScenario import (
     PipelineScenario,
     PIPELINES_WITH_RM,
