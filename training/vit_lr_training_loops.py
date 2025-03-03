@@ -2,19 +2,19 @@ import os
 import random
 
 import torch
-from tqdm import tqdm
-
 from data.core50.CORe50DataLoader import CORe50DataLoader
 from data.core50.constants import (
     CORE50_ROOT_PATH,
     CORE50_CATEGORY_NAMES,
     CORE50_CLASS_NAMES,
 )
+from tqdm import tqdm
+
 from evaluation.evaluation_utils import plot_confusion_matrix
 from evaluation.vit_lr_evaluation_loop import vit_lr_evaluation_pipeline
-from models.vit_lr.ResizeProcedure import ResizeProcedure
-from models.vit_lr.ViTLR_model import ViTLR
-from models.vit_lr.vit_lr_utils import vit_lr_image_preprocessing
+from the_models.vit_lr.ResizeProcedure import ResizeProcedure
+from the_models.vit_lr.ViTLR_model import ViTLR
+from the_models.vit_lr.vit_lr_utils import vit_lr_image_preprocessing
 from training.CustomSGD import CustomSGD
 from training.PipelineScenario import (
     PIPELINES_WITH_LEARNING_RATE_MODULATION,

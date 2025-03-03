@@ -6,10 +6,10 @@ import numpy as np
 import torch
 from PIL import Image
 
-from data.core50 import constants
-from data.core50.constants import NEW_TO_OLD_NAMES
-from models.vit_lr.ResizeProcedure import ResizeProcedure
-from models.vit_lr.vit_lr_utils import bordering_resize
+from the_datasets.core50 import constants
+from the_datasets.core50.constants import NEW_TO_OLD_NAMES
+from the_models.vit_lr.ResizeProcedure import ResizeProcedure
+from the_models.vit_lr.vit_lr_utils import bordering_resize
 
 
 class CORe50DataLoader(object):

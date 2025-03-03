@@ -1,8 +1,8 @@
 import torch
 import torch.nn as nn
 
-from models.vit_lr.PositionalEmbedding1D import PositionalEmbedding1D
-from models.vit_lr.Transformer import Transformer
+from the_models.vit_lr.PositionalEmbedding1D import PositionalEmbedding1D
+from the_models.vit_lr.Transformer import Transformer
 
 
 class ViTLR(nn.Module):
