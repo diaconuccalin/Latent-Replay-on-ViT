@@ -15,7 +15,7 @@ from the_datasets.core50.constants import (
 from the_models.vit_lr.ResizeProcedure import ResizeProcedure
 from the_models.vit_lr.ViTLR_model import ViTLR
 from the_models.vit_lr.vit_lr_utils import vit_lr_image_preprocessing
-from the_models.vit_regular.vit_factory import vit_large
+from the_models.vit_regular.vit_factory import custom_vit_large
 from training.CustomSGD import CustomSGD
 from training.PipelineScenario import (
     PIPELINES_WITH_LEARNING_RATE_MODULATION,
@@ -354,8 +354,9 @@ def vit_training_pipeline(
             latent_replay_layer=latent_replay_layer,
         )
     else:
-        model = vit_large(
+        model = custom_vit_large(
             num_classes=50,
+            depth=num_blocks,
         )
 
     # Load weights
