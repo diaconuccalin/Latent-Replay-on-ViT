@@ -162,7 +162,8 @@ cython_debug/
 .idea/
 
 # Project related locations
-/datasets/core50/data/
-/weights/
-/logs/
 /evaluation_results/
+/logs/
+/the_datasets/core50/data/
+/utils/
+/weights/

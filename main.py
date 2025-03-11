@@ -3,7 +3,9 @@ import os
 
 import torch
 
-from datasets.core50.constants import (
+from evaluation.evaluation_utils import plot_confusion_matrix, plot_losses
+from evaluation.vit_lr_evaluation_loop import vit_lr_evaluation_pipeline
+from the_datasets.core50.constants import (
     NI_TRAINING_BATCHES,
     NC_TRAINING_BATCHES,
     NIC_CUMULATIVE_TRAINING_BATCHES,
@@ -22,8 +24,6 @@ from datasets.core50.constants import (
     NIC_POPULATE_RM_EPOCHS,
     NIC_SINGLE_CUMULATIVE_TRAINING_BATCHES,
 )
-from evaluation.evaluation_utils import plot_confusion_matrix, plot_losses
-from evaluation.vit_lr_evaluation_loop import vit_lr_evaluation_pipeline
 from training.PipelineScenario import (
     PipelineScenario,
     PIPELINES_WITH_RM,
@@ -66,7 +66,9 @@ def create_arg_parser():
         required=True,
     )
     parser.add_argument(
-        "--weights_path", help="Path to the trained model weights.", required=False
+        "--weights_path",
+        help="Path to the trained model weights.",
+        required=False,
     )
     parser.add_argument(
         "--profile",
@@ -125,6 +127,15 @@ def create_arg_parser():
         type=lambda arg: list(map(int, arg.split(","))),
         required=False,
         default=[-1],
+    )
+    parser.add_argument(
+        "--input_image_size",
+        "-img_size",
+        help="Defines the size of the input image. "
+        + "Defaults to (224, 224) and accepts integer values between 1 and 384.",
+        type=lambda arg: tuple(map(int, arg.split(","))),
+        required=False,
+        default=(224, 224),
     )
 
     return parser
@@ -201,6 +212,8 @@ def vit_lr_train(
     current_scenario,
     n_blocks,
     runs,
+    pretrained_weights_path="weights/pretrained_imagenet/B_16_imagenet1k.pth",
+    input_image_size=(384, 384),
     rehearsal_memory_size=0,
     should_validate=False,
     latent_replay_layers=None,
@@ -317,6 +330,8 @@ def vit_lr_train(
                     should_validate=should_validate,
                     validation_batch=validation_batch,
                     latent_replay_layer=lr_layer,
+                    pretrained_weights_path=pretrained_weights_path,
+                    input_image_size=input_image_size,
                     **CONSTANT_TRAINING_PARAMETERS,
                 )
 
@@ -337,6 +352,8 @@ def main():
     data_loader_debug_mode = args.data_loader_debug_mode
     current_task = args.current_task
     latent_replay_layers = args.latent_replay_layers
+    pretrained_weights_path = args.weights_path
+    input_image_size = args.input_image_size
 
     # Check if pipeline is supported
     available_pipelines = [
@@ -378,6 +395,8 @@ def main():
             n_blocks=n_blocks,
             runs=runs,
             should_validate=do_validation,
+            pretrained_weights_path=pretrained_weights_path,
+            input_image_size=input_image_size,
         )
     else:
         current_scenario = None

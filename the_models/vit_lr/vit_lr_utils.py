@@ -97,3 +97,35 @@ def bordering_resize(x, original_image_size, input_image_size):
         :,
     ] = x
     return new_x
+
+
+def crop_resize(x, original_image_size, input_image_size):
+    """
+    Resize image by cropping (center crop).
+    Currently only supports lists of images that have the same dimensions!
+
+    :param x: torch.Tensor of shape (mini_batch_size, original_image_size[0], original_image_size[0], channels) - the images
+                to be resized
+    :param original_image_size: tuple of (height, width) - the original dimensions of the images
+    :param input_image_size: tuple of (height, width) - the target dimensions of the images
+    :return: torch.Tensor of shape (mini_batch_size, input_image_size[0], input_image_size[1], channels) - the resized images
+    """
+
+    # Compute horizontal and vertical crop
+    border_size_0 = int((original_image_size[0] - input_image_size[0]) / 2)
+    border_size_1 = int((original_image_size[1] - input_image_size[1]) / 2)
+
+    border_size_0_remaining = (
+        original_image_size[0] - input_image_size[0] - border_size_0
+    )
+    border_size_1_remaining = (
+        original_image_size[1] - input_image_size[1] - border_size_1
+    )
+
+    # Perform bordering
+    return x[
+        :,
+        border_size_0:-border_size_0_remaining,
+        border_size_1:-border_size_1_remaining,
+        :,
+    ]

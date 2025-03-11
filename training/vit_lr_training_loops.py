@@ -4,17 +4,18 @@ import random
 import torch
 from tqdm import tqdm
 
-from datasets.core50.CORe50DataLoader import CORe50DataLoader
-from datasets.core50.constants import (
+from evaluation.evaluation_utils import plot_confusion_matrix
+from evaluation.vit_lr_evaluation_loop import vit_lr_evaluation_pipeline
+from the_datasets.core50.CORe50DataLoader import CORe50DataLoader
+from the_datasets.core50.constants import (
     CORE50_ROOT_PATH,
     CORE50_CATEGORY_NAMES,
     CORE50_CLASS_NAMES,
 )
-from evaluation.evaluation_utils import plot_confusion_matrix
-from evaluation.vit_lr_evaluation_loop import vit_lr_evaluation_pipeline
-from models.vit_lr.ResizeProcedure import ResizeProcedure
-from models.vit_lr.ViTLR_model import ViTLR
-from models.vit_lr.vit_lr_utils import vit_lr_image_preprocessing
+from the_models.vit_lr.ResizeProcedure import ResizeProcedure
+from the_models.vit_lr.ViTLR_model import ViTLR
+from the_models.vit_lr.vit_lr_utils import vit_lr_image_preprocessing
+from the_models.vit_regular.vit_factory import vit_large
 from training.CustomSGD import CustomSGD
 from training.PipelineScenario import (
     PIPELINES_WITH_LEARNING_RATE_MODULATION,
@@ -150,7 +151,10 @@ def vit_lr_epoch(
                     data_loader.idx_order[data_loader.idx - 1]
                 )
             else:
-                y_pred = model(x=x_train, get_activation=False)
+                if isinstance(model, ViTLR):
+                    y_pred = model(x=x_train, get_activation=False)
+                else:
+                    y_pred = model(x_train[1])
 
             # Backward step
             loss = criterion(y_pred, y_train)
@@ -270,6 +274,7 @@ def vit_training_pipeline(
     pretrained_weights_path,
     current_scenario,
     session_name,
+    model_type="ViTLarge",
     lr_modulation_batch_specific_weights=None,
     xi=1e-7,
     max_f=0.001,
@@ -300,7 +305,9 @@ def vit_training_pipeline(
         root=CORE50_ROOT_PATH,
         original_image_size=(350, 350),
         input_image_size=input_image_size,
-        resize_procedure=ResizeProcedure.BORDER,
+        resize_procedure=(
+            ResizeProcedure.BORDER if model_type == "ViTLR" else ResizeProcedure.CROP
+        ),
         image_channels=3,
         scenario=current_task,
         rehearsal_memory_size=rehearsal_memory_size,
@@ -338,13 +345,18 @@ def vit_training_pipeline(
     print("Preparing model...")
 
     # Generate model object
-    model = ViTLR(
-        device=device,
-        num_blocks=num_blocks,
-        input_size=input_image_size,
-        num_classes=num_classes,
-        latent_replay_layer=latent_replay_layer,
-    )
+    if model_type == "ViTLR":
+        model = ViTLR(
+            device=device,
+            num_blocks=num_blocks,
+            input_size=input_image_size,
+            num_classes=num_classes,
+            latent_replay_layer=latent_replay_layer,
+        )
+    else:
+        model = vit_large(
+            num_classes=50,
+        )
 
     # Load weights
     print("Loading pretrained weights...")
@@ -357,8 +369,12 @@ def vit_training_pipeline(
 
     # Required for fully connected layer
     # Overwrite original weights for ImageNet 1k (1000 classes => incompatible fc layer dimension)
-    weights["fc.weight"] = model.fc.weight.data
-    weights["fc.bias"] = model.fc.bias.data
+    if model_type == "ViTLR":
+        weights["fc.weight"] = model.fc.weight.data
+        weights["fc.bias"] = model.fc.bias.data
+    else:
+        weights["head.weight"] = model.head.weight.data
+        weights["head.bias"] = model.head.bias.data
 
     if current_scenario in PIPELINES_WITH_RM:
         # Prepare consolidated weights (and biases) tensors and other required variables
@@ -369,21 +385,30 @@ def vit_training_pipeline(
     else:
         cw = cb = past = w_past = None
 
-    # Required because the proj_out layer is not present in the default ViT
-    for i in range(num_blocks):
-        # torch.eye is an identity matrix
-        weights["transformer.blocks." + str(i) + ".attn.proj_out.weight"] = torch.eye(
-            n=model.state_dict()[
-                "transformer.blocks." + str(i) + ".attn.proj_out.weight"
-            ].shape[0]
-        )
+    if model_type == "ViTLR":
+        # Required because the proj_out layer is not present in the default ViT
+        for i in range(num_blocks):
+            # torch.eye is an identity matrix
+            weights["transformer.blocks." + str(i) + ".attn.proj_out.weight"] = (
+                torch.eye(
+                    n=model.state_dict()[
+                        "transformer.blocks." + str(i) + ".attn.proj_out.weight"
+                    ].shape[0]
+                )
+            )
 
     # Remove unused transformer blocks
     keys_to_delete = list()
-    for i in range(num_blocks, 12):
-        for el in weights.keys():
-            if "transformer.blocks." + str(i) + "." in el:
-                keys_to_delete.append(el)
+    if model_type == "ViTLR":
+        for i in range(num_blocks, 12):
+            for el in weights.keys():
+                if "transformer.blocks." + str(i) + "." in el:
+                    keys_to_delete.append(el)
+    else:
+        for i in range(num_blocks, 24):
+            for el in weights.keys():
+                if "blocks." + str(i) + "." in el:
+                    keys_to_delete.append(el)
 
     for key in keys_to_delete:
         weights.pop(key)
@@ -391,8 +416,9 @@ def vit_training_pipeline(
     # Actually load weights into model
     model.load_state_dict(weights)
 
-    # Set backbone as trainable (it will be changed according to the scenario and current epoch)
-    model.set_backbone_requires_grad(True)
+    if model_type == "ViTLR":
+        # Set backbone as trainable (it will be changed according to the scenario and current epoch)
+        model.set_backbone_requires_grad(True)
 
     # Move model to GPU
     model.to(device)
