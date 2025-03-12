@@ -11,6 +11,7 @@ from the_datasets.core50.constants import (
 from the_models.vit_lr.ResizeProcedure import ResizeProcedure
 from the_models.vit_lr.ViTLR_model import ViTLR
 from the_models.vit_lr.vit_lr_utils import vit_lr_image_preprocessing
+from the_models.vit_regular.vit_factory import custom_vit_large
 
 
 def vit_lr_evaluation_pipeline(
@@ -22,6 +23,7 @@ def vit_lr_evaluation_pipeline(
     device,
     weights_path=None,
     model=None,
+    model_type=None,
 ):
     # Assert that only one of weights path or model is provided
     assert (weights_path is not None) ^ (
@@ -39,7 +41,9 @@ def vit_lr_evaluation_pipeline(
         root=CORE50_ROOT_PATH,
         original_image_size=(350, 350),
         input_image_size=input_image_size,
-        resize_procedure=ResizeProcedure.BORDER,
+        resize_procedure=(
+            ResizeProcedure.BORDER if model_type == "ViTLR" else ResizeProcedure.CROP
+        ),
         image_channels=3,
         scenario=current_task,
         start_run=current_run,
@@ -65,19 +69,29 @@ def vit_lr_evaluation_pipeline(
         max_block = 0
         for el in weights.keys():
             if "blocks" in el:
-                current_block = int(el.split(".")[2])
+                if "blocks." in el:
+                    current_block = int(el.split(".")[1])
+                else:
+                    current_block = int(el.split(".")[2])
 
                 if current_block > max_block:
                     max_block = current_block
 
         # Prepare and load model
-        model = ViTLR(
-            device=device,
-            num_blocks=max_block + 1,
-            input_size=input_image_size,
-            num_classes=num_classes,
-            dropout_rate=0.0,
-        )
+        if model_type == "ViTLR":
+            model = ViTLR(
+                device=device,
+                num_blocks=max_block + 1,
+                input_size=input_image_size,
+                num_classes=num_classes,
+                dropout_rate=0.0,
+            )
+        else:
+            model = custom_vit_large(
+                num_classes=50,
+                depth=max_block + 1,
+            )
+
         model.load_state_dict(weights)
 
     # Move model to GPU
@@ -105,7 +119,7 @@ def vit_lr_evaluation_pipeline(
         x_train = vit_lr_image_preprocessing(x=x_train, device=device)
 
         y_train = y_train.item()
-        y_pred = torch.argmax(model(x=x_train, get_activation=False)).item()
+        y_pred = torch.argmax(model(x_train[1])).item()
 
         all_y_trains.append(y_train)
         all_y_preds.append(y_pred)

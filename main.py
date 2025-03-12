@@ -141,7 +141,13 @@ def create_arg_parser():
     return parser
 
 
-def vit_lr_core50_evaluation(device, weights_path, category_based_split, current_task):
+def vit_lr_core50_evaluation(
+    device,
+    weights_path,
+    category_based_split,
+    current_task,
+    input_image_size,
+):
     # Remove current dir path from weights path
     weights_path = weights_path.replace(os.getcwd() + "/", "")
 
@@ -157,7 +163,7 @@ def vit_lr_core50_evaluation(device, weights_path, category_based_split, current
 
     losses, accuracy, conf_mat = vit_lr_evaluation_pipeline(
         batch=batch,
-        input_image_size=(384, 384),
+        input_image_size=input_image_size,
         current_task=current_task,
         current_run=0,
         weights_path=weights_path,
@@ -383,6 +389,7 @@ def main():
             weights_path=weights_path,
             category_based_split=False,
             current_task=current_task,
+            input_image_size=input_image_size,
         )
     elif pipeline == "native_cumulative_train":
         vit_lr_train(
