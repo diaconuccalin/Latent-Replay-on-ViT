@@ -2,6 +2,13 @@ import argparse
 import os
 
 import torch
+import torchvision
+
+import numpy as np
+import random
+
+from tqdm import tqdm
+from models.torch_vit_constants import vit_models
 
 from datasets.core50.constants import (
     NI_TRAINING_BATCHES,
@@ -22,6 +29,7 @@ from datasets.core50.constants import (
     NIC_POPULATE_RM_EPOCHS,
     NIC_SINGLE_CUMULATIVE_TRAINING_BATCHES,
 )
+from datasets.imagenet.constants import imagenet_correct_classes
 from evaluation.evaluation_utils import plot_confusion_matrix, plot_losses
 from evaluation.vit_lr_evaluation_loop import vit_lr_evaluation_pipeline
 from training.PipelineScenario import (
@@ -55,15 +63,18 @@ def create_arg_parser():
     # Parse arguments
     parser = argparse.ArgumentParser()
 
-    parser.add_argument("session_name", help="Name to be used when saving the weights.")
     parser.add_argument(
-        "pipeline",
+        "--session_name",
+        help="Name to be used when saving the weights.",
+    )
+    parser.add_argument(
+        "--pipeline",
         help="The pipeline to be run. One of: vit_lr_naive_finetune, vit_lr_core50_evaluation.",
     )
     parser.add_argument(
         "--current_task",
         help="The task to be used.",
-        required=True,
+        required=False,
     )
     parser.add_argument(
         "--weights_path", help="Path to the trained model weights.", required=False
@@ -321,6 +332,318 @@ def vit_lr_train(
                 )
 
 
+def evaluate_model(
+    model,
+    img_transforms,
+    eval_imgs_paths,
+    eval_gts,
+    device,
+    batch_size=64,
+):
+    """
+    Evaluates the model on the given images and ground truths.
+    Returns accuracy and confusion matrix.
+    """
+    model.to(device)
+    model.eval()
+
+    # Run inference on evaluation images
+    n_batches = len(eval_imgs_paths) // batch_size
+    correct_predictions = 0
+    total_predictions = 0
+
+    progress_bar = tqdm(range(n_batches))
+    progress_bar.set_description("Accuracy so far:... Evaluating model")
+    for batch_idx in progress_bar:
+        # Process evaluation images
+        eval_images_tensor = []
+
+        for img_i in range(batch_size):
+            # Load and preprocess image
+            img = torchvision.io.read_image(eval_imgs_paths[batch_idx * batch_size + img_i], mode="RGB").float() / 255.0
+            img = img_transforms(img)
+            eval_images_tensor.append(img)
+
+        eval_images_tensor = torch.stack(eval_images_tensor).to(device)
+
+        # Forward pass through the model
+        with torch.no_grad():
+            results = model(eval_images_tensor)
+
+        # Compute accuracy
+        _, predicted_labels = torch.max(results, dim=1)
+
+        correct_predictions += (predicted_labels == torch.tensor(eval_gts[batch_idx * batch_size: (batch_idx + 1) * batch_size]).to(device)).cpu().sum().item()
+        total_predictions += len(predicted_labels)
+
+        progress_bar.set_description(
+            f"Accuracy so far: {correct_predictions / total_predictions * 100:.2f}%. Evaluating model"
+        )
+
+    return correct_predictions / total_predictions
+
+
+activations = {}
+def get_hook(module_name, root_dir, act_dir):
+    def hook_fn(module, _, output):
+        # Save to file
+        if module_name not in activations:
+            activations[module_name] = 0
+
+        torch.save(
+            output.flatten(),
+            os.path.join(
+                root_dir,
+                act_dir,
+                module_name + "_activations_" + str(activations[module_name]) + ".pt"))
+        activations[module_name] += 1
+    
+    return hook_fn
+
+
+def block_level_pruning(
+    model_name,
+    device,
+    dataset="imagenet",
+    calibration_sample_size=200,
+    batch_size=64,
+    ):
+    # Check correct model
+    assert model_name in [
+        "vit_b_16_default",
+        "vit_b_16_swag_linear",
+        "vit_b_16_swag_e2e",
+        "vit_b_32_default",
+        "vit_l_16_default",
+        "vit_l_16_swag_linear",
+        "vit_l_16_swag_e2e",
+        "vit_l_32_default",
+        "vit_h_14_swag_linear",
+        "vit_h_14_swag_e2e",
+    ], "Invalid model name!"
+
+    # Prepare result directory
+    if not os.path.exists(os.path.join(
+        "results",
+        model_name,
+    )):
+        os.makedirs(os.path.join(
+            "results",
+            model_name,
+        ))
+
+    # ---- Select random calibration dataset
+    val_images = None
+    val_gt = None
+
+    if dataset == "imagenet":
+        print("Preparing calibration set...")
+        # Prepare paths
+        scratch_root = os.environ["SCRATCH"]
+        datasets_root = os.path.join(scratch_root, "datasets")
+        imagenet_root = os.path.join(datasets_root, "imagenet")
+
+        val_gt_path = os.path.join(imagenet_root, "gt_val.txt")
+        val_images_path = os.path.join(imagenet_root, "val")
+
+        # Load validation ground truth and extract labels
+        with open(val_gt_path, "r") as f:
+            val_gt = f.readlines()
+        val_gt = [int(line.strip().split(" ")[0]) for line in val_gt]
+
+        # Fix labels to match the correct classes
+        with open(os.path.join(
+            "datasets", "imagenet", "map_cls_all.txt"
+        ), "r") as f:
+            lines = [el.strip().split(" ") for el in f.readlines()]
+        
+        # Sort by old index
+        lines = sorted(lines, key=lambda x: int(x[1]))
+
+        # Update labels
+        val_gt = [int(lines[int(label) - 1][3]) for label in val_gt]
+        
+        # Select random subset of validation images
+        random_indices = np.random.choice(
+            len(val_gt), size=calibration_sample_size, replace=False
+        )
+
+        val_images = sorted(os.listdir(val_images_path))
+        val_images = [os.path.join(val_images_path, im) for im in val_images]
+        calibration_images = [val_images[i] for i in random_indices]
+        calibration_labels = [val_gt[i] for i in random_indices]
+    else:
+        raise ValueError("Invalid dataset name for block level pruning!")
+
+    # ---- Generate calibration activations
+    # Load pre-trained ViT model and set required variables
+    print("Loading pre-trained ViT model...")
+
+    weights = vit_models[model_name]["weights"]
+    model = vit_models[model_name]["model"](weights=weights)    
+    img_transforms = weights.transforms()
+
+    # Initial evaluation
+    initial_accuracy = evaluate_model(
+        model=model,
+        img_transforms=img_transforms,
+        eval_imgs_paths=val_images,
+        eval_gts=val_gt,
+        device=device,
+        batch_size=64,
+    )
+
+    with open(os.path.join(
+        "results",
+        model_name,
+        "accuracy.txt",
+    ), "w") as f:
+        f.write(f"Initial accuracy: {initial_accuracy * 100:.2f}%\n")
+
+    # Create forward hooks to capture activations
+    print("Registering forward hooks...")
+    hooks = []
+    reference_name_len = len("encoder.layers.encoder_layer_")
+    for name, module in model.named_modules():
+        if reference_name_len < len(name) < reference_name_len + 3:
+            hooks.append(
+                module.register_forward_hook(
+                    get_hook(
+                        module_name=name,
+                        root_dir=os.path.join(
+                            os.environ["FAST"],
+                            "activations_calin",),
+                        act_dir=model_name,
+            )))
+    print(len(hooks), "hooks registered!")
+
+    # Set model to evaluation mode
+    model.eval()
+
+    # Prepare directory for saving activations
+    if not os.path.exists(os.path.join(
+        os.environ["FAST"],
+        "activations_calin",
+        model_name,
+    )):
+        os.makedirs(os.path.join(
+            os.environ["FAST"],
+            "activations_calin",
+            model_name,
+        ))
+
+    # Run inference on calibration images
+    n_batches = len(calibration_images) // batch_size
+    for batch_idx in tqdm(range(n_batches), desc="Running inferences for calibration"):
+        # Process calibration images
+        calibration_images_tensor = []
+
+        for img_i in range(batch_size):
+            # Load and preprocess image
+            img = torchvision.io.read_image(calibration_images[img_i], mode="RGB").float() / 255.0
+            img = img_transforms(img)
+            calibration_images_tensor.append(img)
+            del img
+
+        calibration_images_tensor = torch.stack(calibration_images_tensor).to(device)
+
+        # Forward pass through the model
+        with torch.no_grad():
+            results = model(calibration_images_tensor)
+            
+        model.zero_grad()
+        del calibration_images_tensor
+
+    # Compute number of blocks
+    n_blocks = len(activations)
+
+    # ---- Compute activation distribution similarity
+    print("Computing activation distributions...")
+    histograms = list()
+    for block_idx in range(n_blocks):
+        block_tensor = None
+
+        for batch_idx in range(n_batches):
+            # Load activations from files
+            file_name = os.path.join(
+                os.environ["FAST"],
+                "activations_calin",
+                model_name,
+                "encoder.layers.encoder_layer_" + str(block_idx) + "_activations_" + str(batch_idx) + ".pt"
+            )
+
+            if os.path.exists(file_name):
+                current_tensor = torch.load(file_name)
+                
+                if block_tensor is None:
+                    block_tensor = current_tensor
+                else:
+                    block_tensor = torch.cat((block_tensor, current_tensor), dim=0)
+            else:
+                print(f"File {file_name} does not exist, skipping...")
+
+        histograms.append(torch.histc(
+            block_tensor,
+            bins=256,
+        ))
+
+    # Compute similarity between histograms
+    print("Computing histogram similarity...")
+    similarity_matrix = torch.zeros((n_blocks, n_blocks))
+    for i in range(n_blocks):
+        for j in range(n_blocks):
+            if i != j:
+                similarity_matrix[i, j] = torch.cosine_similarity(
+                    histograms[i].flatten(),
+                    histograms[j].flatten(),
+                    dim=0,
+                )
+            else:
+                similarity_matrix[i, j] = -1.0
+
+    # ---- Iterate over blocks, prune, and evaluate
+    print("Iterating over blocks to prune and evaluate...")
+    remaining_blocks = list(range(n_blocks))
+
+    for block_idx in range(n_blocks - 1):
+        # -- Prune block
+        # Find block to prune
+        max_similarity = 0.0
+        block_to_prune = remaining_blocks[0]
+
+        for i in range(len(remaining_blocks) - 1):
+            if similarity_matrix[remaining_blocks[i], remaining_blocks[i + 1]] > max_similarity:
+                max_similarity = similarity_matrix[remaining_blocks[i], remaining_blocks[i + 1]]
+                block_to_prune = remaining_blocks[i + 1]
+
+        # Prune block from model
+        model.encoder.layers.pop(remaining_blocks.index(block_to_prune))
+        remaining_blocks.remove(block_to_prune)
+
+        # -- Evaluate model performance
+        initial_accuracy = evaluate_model(
+            model=model,
+            img_transforms=img_transforms,
+            eval_imgs_paths=val_images,
+            eval_gts=val_gt,
+            device=device,
+            batch_size=64,
+        )
+
+        with open(os.path.join(
+            "results",
+            model_name,
+            "accuracy.txt",
+        ), "a") as f:
+            f.write(f"Accuracy after {n_blocks - len(remaining_blocks)} blocks removed (most recently block {block_to_prune} with similarity between input and output activation distribution {max_similarity}): {initial_accuracy * 100:.2f}%\n")
+
+        # -- Fine-tune model
+
+        # -- Evaluate post-tuning performance
+
+    print("Succesfully finished!")
+
+
 def main():
     # Parse arguments
     parser = create_arg_parser()
@@ -338,6 +661,9 @@ def main():
     current_task = args.current_task
     latent_replay_layers = args.latent_replay_layers
 
+    if pipeline != "block_level_pruning":
+        assert current_task is not None, "Current task must be specified for this pipeline."
+
     # Check if pipeline is supported
     available_pipelines = [
         "core50_evaluation",
@@ -348,6 +674,7 @@ def main():
         "lr_cwr_star_train",  # PipelineScenario.LR_CWR_STAR
         "lr_ar1_star_train",  # PipelineScenario.LR_AR1_STAR
         "lr_ar1_star_free_train",  # PipelineScenario.LR_AR1_STAR_FREE
+        "block_level_pruning",
     ]
     assert (
         pipeline in available_pipelines
@@ -355,6 +682,8 @@ def main():
 
     # Set seed
     torch.manual_seed(42)
+    np.random.seed(42)
+    random.seed(42)
 
     # Get cuda device
     device = get_cuda_device()
@@ -367,6 +696,8 @@ def main():
             category_based_split=False,
             current_task=current_task,
         )
+    elif pipeline == "block_level_pruning":
+        block_level_pruning(model_name=session_name, calibration_sample_size=128, device=device)
     elif pipeline == "native_cumulative_train":
         vit_lr_train(
             current_scenario=PipelineScenario.NATIVE_CUMULATIVE,

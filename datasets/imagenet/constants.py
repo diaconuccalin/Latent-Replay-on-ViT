@@ -1,3 +1,5 @@
+import os
+
 imagenet_classes = {
     0: "tench, Tinca tinca",
     1: "goldfish, Carassius auratus",
@@ -1000,3 +1002,21 @@ imagenet_classes = {
     998: "ear, spike, capitulum",
     999: "toilet tissue, toilet paper, bathroom tissue",
 }
+
+def get_imagenet_correct_classes():
+    with open(os.path.join("datasets/imagenet/map_clsloc.txt"), "r") as f:
+        labels = f.readlines()
+
+    labels = [{
+        "subfolder_name": line.strip().split(" ")[0],
+        "id": int(line.strip().split(" ")[1]),
+        "class_name": line.strip().split(" ")[2]
+        } for line in labels]
+
+    return [{
+        "subfolder_name": None,
+        "id": 0,
+        "class_name": None
+    },] + labels
+
+imagenet_correct_classes = get_imagenet_correct_classes()
